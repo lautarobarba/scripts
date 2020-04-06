@@ -14,8 +14,9 @@
 
 if [[ $# -eq 1 ]]
 then
-    cp $(pwd)/$1 ~/.config/wallpaper
-    feh --bg-scale ~/.config/wallpaper
+    echo $(pwd)/$1 > ~/.config/wallpaper
+    feh --bg-scale $(cat ~/.config/wallpaper)
+    wal -n -a 90 -i $(cat ~/.config/wallpaper)
 else
     echo Ejecutar como: $ set-wallpaper nombre_archivo
 fi
