@@ -14,9 +14,9 @@
 
 
 
-DIR_BACKUPS="./backups"     # Directorio donde se guardan los backups
-CANT_MAX=2                  # Cantidad de backups que se desea mantener
-LOG_DIR="./borrar_log.log"  # Archivo donde se guardarán los logs
+DIR_BACKUPS="./backups"     	# Directorio donde se guardan los backups
+CANT_MAX=2                	# Cantidad de backups que se desea mantener
+LOG_DIR="./borrar_backups.log"  # Archivo donde se guardarán los logs
 
 echo "== Script =="
 
