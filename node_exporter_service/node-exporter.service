@@ -6,3 +6,6 @@ After=network.target
 ExecStart=/root/scripts/node_exporter_service/node_exporter --web.listen-address=:9000
 Type=simple
 Restart=always
+
+[Install]
+WantedBy=multi-user.target
