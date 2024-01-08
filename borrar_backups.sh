@@ -1,40 +1,41 @@
 #!/usr/bin/env bash
-#
-################################
-#      _                       #
-#  ___| |_ _ __ __ _ ______ _  #
-# / __| __| '__/ _` |_  / _` | #
-# \__ \ |_| | | (_| |/ / (_| | #
-# |___/\__|_|  \__,_/___\__,_| #
-#                              #
-#------------------------------#
-#  BorrarBackUps - Programa    #
-#                              #
-################################
 
-
-
-DIR_BACKUPS="./backups"     	# Directorio donde se guardan los backups
+#========== CONFIG ========================================================
+DIR_BACKUPS="./backups"     	# Directorio de backups
 CANT_MAX=2                	# Cantidad de backups que se desea mantener
 LOG_DIR="./borrar_backups.log"  # Archivo donde se guardarán los logs
+#======== END CONFIG ======================================================
 
-echo "== Script =="
 
 CANT_ARCHIVOS=$(( $(ls ${DIR_BACKUPS} -l | wc -l) - 1 ))
-echo "Cantidad maxima permitida: ${CANT_MAX}. Hay ${CANT_ARCHIVOS} archivos." >> ${LOG_DIR}
+SCRIPT_PATH=$(realpath $0)
+WORKDIR=$(dirname ${SCRIPT_PATH})
+DIR=$(pwd)
 
-echo "$(date) Revisando..." >> ${LOG_DIR}
+echo [$(date)] "========== Comenzando script de Limpieza de Backups ==========" >>$LOG_DIR
+echo [$(date)] "Existen ${CANT_ARCHIVOS} archivos. Cantidad máxima permitida: ${CANT_MAX}." >>${LOG_DIR}
+
 
 if [ ${CANT_ARCHIVOS} -gt ${CANT_MAX} ]
 then
-    echo "Borrando archivos..."
-    echo "$(date) Borrando archivos..." >> ${LOG_DIR}
-    echo "Se borraran los siguientes archivos: "
-    echo "$(date) Se borraran los siguientes archivos: " >> ${LOG_DIR}
-    ls ${DIR_BACKUPS} -l | sort | head -n $(( ${CANT_ARCHIVOS} - ${CANT_MAX} )) | awk '{print $9}' | xargs printf -- "   -> ${DIR_BACKUPS}/%s \n"
-    ls ${DIR_BACKUPS} -l | sort | head -n $(( ${CANT_ARCHIVOS} - ${CANT_MAX} )) | awk '{print $9}' | xargs printf -- "$(date)    -> ${DIR_BACKUPS}/%s \n" >> ${LOG_DIR}
+    echo [$(date)] "Se borraran los siguientes archivos: " >>${LOG_DIR}
+    ls ${DIR_BACKUPS} -l | sort | head -n $(( ${CANT_ARCHIVOS} - ${CANT_MAX} )) | awk '{print $9}' | xargs printf -- "[$(date)]    -> ${DIR_BACKUPS}/%s\n" >>${LOG_DIR}
     ls ${DIR_BACKUPS} -l | sort | head -n $(( ${CANT_ARCHIVOS} - ${CANT_MAX} )) | awk '{print $9}' | xargs printf -- "${DIR_BACKUPS}/%s " | xargs rm
+    if [ $? -ne 0 ]; then 
+	echo [$(date)] "STATUS: ERROR" >>$LOG_DIR
+	echo [$(date)] "STATUS: LIMPIEZA INCOMPLETA" >>$LOG_DIR
+	echo ------------------------------------ >>$LOG_DIR
+    	exit 1
+    else
+	echo [$(date)] "STATUS: OK" >>$LOG_DIR
+    fi
 else
-    echo "No hace falta borrar nada."
-    echo "$(date) No hace falta borrar nada." >> ${LOG_DIR}
+    echo [$(date)] "No es necesario borrar nada..." >>${LOG_DIR}
+    echo [$(date)] "STATUS: OK" >>$LOG_DIR
 fi
+
+# Vuelvo al directorio actual
+cd ${DIR}
+echo [$(date)] "STATUS: LIMPIEZA FINALIZADA CORRECTAMENTE" >>$LOG_DIR
+echo ------------------------------------ >>$LOG_DIR
+exit 0
