@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+# Control de dependencias
+DEPENDENCIAS=("figlet" "fzf" "gawk" "ssh")
+ERRORES=0
+
+for DEP in ${DEPENDENCIAS[*]}
+do
+	INSTALADO=$(apt list --installed ${DEP} 2>/dev/null | grep instal | cut -d '/' -f 1)
+	if [[ ! ${INSTALADO} ]] 
+	then
+		ERRORES+=1
+		echo "Falta instalar > ${DEP}. Instalar con: $ sudo apt install ${DEP}"
+	fi
+done
+
+if [[ ${ERRORES} != 0 ]]
+then
+	exit ${ERRORES}
+fi
+
+# Título
+figlet sshls
+
+# Ayuda
+function imprimir_ayuda() {
+	echo -e "\e[1mPodés agregar una nueva conexión en ${0}/.sshls\e[0m"
+	echo -e "\e[1mNo te olvides de guardar la contraseña en bitwarden\e[0m"
+	echo -e "\e[1mTambién podés copiar evitar el prompt de contraseña guardando la conexión con:\e[0m"
+	echo -e "\e[1m	$ ssh-copy-id user@server\e[0m"
+	echo
+}
+
+if [[ ${1} == "-h" ]] || [[ ${1} = "--help" ]]; then
+	imprimir_ayuda
+	exit 0
+fi
+
+# Programa
+SELECCION=$(cat .sshls | fzf | awk '{print $1}')
+if [[ -z $SELECCION ]]; then
+	imprimir_ayuda
+else 
+	CONEXION=$(echo $SELECCION | cut -d: -f1)
+	PUERTO=$(echo $SELECCION | cut -d: -f2)
+
+	ssh -p $PUERTO $CONEXION
+fi
+exit 0
