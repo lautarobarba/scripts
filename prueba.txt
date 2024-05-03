@@ -1,0 +1,10 @@
+drwxrwxr-x    - lautaro 11 mar 09:51 node_exporter_service
+.rw-rw-r--  376 lautaro 11 mar 09:51 banner
+.rwxrwxr-x 1,7k lautaro 11 mar 09:51 borrar_backups.sh
+.rwxrwxr-x  564 lautaro 11 mar 09:51 make-pdf.sh
+.rwxrwxr-x 1,4k lautaro 11 mar 09:51 mute-terminal.sh
+.rw-rw-r--    0 lautaro 11 mar 09:54 prueba.txt
+.rw-rw-r--    9 lautaro 11 mar 09:51 README.md
+.rwxrwxr-x  272 lautaro 11 mar 09:51 remap
+.rwxrwxr-x  596 lautaro 11 mar 09:51 set-banner.sh
+.rwxrwxr-x  598 lautaro 11 mar 09:51 set-wallpaper.sh
