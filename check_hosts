@@ -1,0 +1,3 @@
+#!/bin/bash
+
+sudo vimdiff /etc/hosts ${HOME}/Dropbox/hosts
