@@ -24,7 +24,7 @@ figlet sshls
 
 # Ayuda
 function imprimir_ayuda() {
-	echo -e "\e[1mPodés agregar una nueva conexión en ${0}/.sshls\e[0m"
+	echo -e "\e[1mPodés agregar una nueva conexión en ${HOME}/.sshls\e[0m"
 	echo -e "\e[1mNo te olvides de guardar la contraseña en bitwarden\e[0m"
 	echo -e "\e[1mTambién podés copiar evitar el prompt de contraseña guardando la conexión con:\e[0m"
 	echo -e "\e[1m	$ ssh-copy-id user@server\e[0m"
@@ -37,7 +37,7 @@ if [[ ${1} == "-h" ]] || [[ ${1} = "--help" ]]; then
 fi
 
 # Programa
-SELECCION=$(cat .sshls | fzf | awk '{print $1}')
+SELECCION=$(cat ${HOME}/.sshls | fzf | awk '{print $1}')
 if [[ -z $SELECCION ]]; then
 	imprimir_ayuda
 else 
