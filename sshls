@@ -7,7 +7,7 @@ ERRORES=0
 for DEP in ${DEPENDENCIAS[*]}
 do
 	INSTALADO=$(apt list --installed ${DEP} 2>/dev/null | grep instal | cut -d '/' -f 1)
-	if [[ ! ${INSTALADO} ]] 
+	if [[ ! ${INSTALADO} ]]
 	then
 		ERRORES+=1
 		echo "Falta instalar > ${DEP}. Instalar con: $ sudo apt install ${DEP}"
@@ -40,7 +40,7 @@ fi
 SELECCION=$(cat ${HOME}/.sshls | fzf | awk '{print $1}')
 if [[ -z $SELECCION ]]; then
 	imprimir_ayuda
-else 
+else
 	CONEXION=$(echo $SELECCION | cut -d: -f1)
 	PUERTO=$(echo $SELECCION | cut -d: -f2)
 
