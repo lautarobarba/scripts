@@ -37,7 +37,7 @@ if [[ ${1} == "-h" ]] || [[ ${1} = "--help" ]]; then
 fi
 
 # Programa
-SELECCION=$(cat ${HOME}/.sshls | grep -v "#" | fzf | awk '{print $1}')
+SELECCION=$(cat ${HOME}/.sshls | grep "^[^#*/;]" | fzf | awk '{print $1}')
 if [[ -z $SELECCION ]]; then
 	imprimir_ayuda
 else
