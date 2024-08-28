@@ -1,3 +1,3 @@
 #!/bin/bash
 
-sudo vimdiff ${HOME}/.sshls ${HOME}/Nextcloud/sshls
+vimdiff ${HOME}/.sshls ${HOME}/Nextcloud/sshls
