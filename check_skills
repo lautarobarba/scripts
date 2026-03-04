@@ -1,0 +1,16 @@
+#!/bin/bash
+SKILLS_DIR="$HOME/.agents/skills"
+OUTPUT_FILE="/tmp/skills_temp"
+
+# Verificar que exista el directorio
+if [ ! -d "$SKILLS_DIR" ]; then
+    echo "No existe $SKILLS_DIR"
+    exit 1
+fi
+
+# Listar solo directorios, obtener basename y ordenar
+find "$SKILLS_DIR" -mindepth 1 -maxdepth 1 -type d \
+    -exec basename {} \; \
+    | sort > "$OUTPUT_FILE"
+
+vimdiff /tmp/skills_temp ${HOME}/Nextcloud/skills_list
