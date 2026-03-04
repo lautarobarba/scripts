@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+
+# Control de dependencias
+DEPENDENCIAS_APT=("figlet" "fzf" "gawk")
+DEPENDENCIAS_SNAP=("bw")
+ERRORES=0
+
+for DEP in ${DEPENDENCIAS_APT[*]}
+do
+	INSTALADO=$(apt list --installed ${DEP} 2>/dev/null | grep instal | cut -d '/' -f 1)
+	if [[ ! ${INSTALADO} ]]
+	then
+		ERRORES+=1
+		echo "Falta instalar > ${DEP}. Instalar con: $ sudo apt install ${DEP}"
+	fi
+done
+for DEP in ${DEPENDENCIAS_SNAP[*]}
+do
+	INSTALADO=$(which ${DEP})
+	if [ ! ${INSTALADO} ] 
+	then
+		ERRORES+=1
+		echo "Falta instalar > ${DEP}. Instalar con: $ sudo snap install ${DEP}"
+	fi
+done
+
+
+if [[ ${ERRORES} != 0 ]]
+then
+	exit ${ERRORES}
+fi
+
+# Título
+figlet BW_HELPER
+
+# Función para obtener las carpetas
+function get_folders() {
+	local FOLDERS=$(bw list folders --pretty | grep -E '"(id|name)"' | paste -d ' ' - -)
+	
+	if [[ -z "$FOLDERS" ]]; then
+		echo "Error: No se encontraron carpetas" >&2
+		exit 1
+	fi
+	
+	echo "$FOLDERS"
+}
+
+# Función para seleccionar una carpeta
+function select_folder() {
+	local FOLDERS="$1"
+	local SELECTED=$(echo "$FOLDERS" | fzf | awk -F'"' '{print $4}')
+	
+	if [[ -z "$SELECTED" ]]; then
+		echo "Error: No se seleccionó ninguna carpeta" >&2
+		exit 1
+	fi
+	
+	echo "$SELECTED"
+}
+
+# Función para obtener items de una carpeta
+function get_items() {
+	local FOLDER="$1"
+	local ITEMS=$(bw list items --folderid "$FOLDER" --pretty)
+	
+	if [[ -z "$ITEMS" ]] || [[ "$ITEMS" == "[]" ]]; then
+		echo "Error: La carpeta no tiene elementos" >&2
+		exit 1
+	fi
+	
+	echo "$ITEMS"
+}
+
+# Función para seleccionar un item
+function select_item() {
+	local ITEMS="$1"
+	local SELECTED=$(echo "$ITEMS" | grep '"name"' | fzf | awk -F'"' '{print $4}')
+	
+	if [[ -z "$SELECTED" ]]; then
+		echo "Error: No se seleccionó ningún item" >&2
+		exit 1
+	fi
+	
+	echo "$SELECTED"
+}
+
+# Programa principal
+FOLDERS=$(get_folders)
+echo "$FOLDERS"
+# SELECTED_FOLDER=$(select_folder "$FOLDERS")
+# echo "Carpeta seleccionada: $SELECTED_FOLDER"
+
+# ITEMS=$(get_items "$SELECTED_FOLDER")
+# echo "$ITEMS"
+# SELECTED_ITEM=$(select_item "$ITEMS")
+# echo "Item seleccionado: $SELECTED_ITEM"
