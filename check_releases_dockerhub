@@ -71,7 +71,9 @@ while IFS= read -r line; do
     image="${rest%:*}"
     version="${rest##*:}"
 
+    echo -n "Checking ${image}... " >&2
     latest=$(check_release "$repo" "$image" "$version")
+    echo "${latest}" >&2
     if [[ "$latest" == "ERROR" ]]; then
         status="ERROR"
     elif [[ "$version" == "$latest" ]]; then
