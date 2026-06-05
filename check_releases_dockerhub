@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+
+RELEASES_FILE="$HOME/Nextcloud/releases_dockerhub"
+# # App[repository]:image:version
+# Gitlab[https://github.com/lautarobarba/gitlab-container]:gitlab/gitlab-ce:18.6.4-ce.0
+# Portainer[https://github.com/lautarobarba/portainer-swarm-container]:portainer/portainer-ce:2.21.5
+# Traefik[https://github.com/lautarobarba/traefik-swarm-container]:traefik:v3.7
+# Nextcloud[https://github.com/lautarobarba/nextcloud-container]:nextcloud:32.0
+
+
+REPO_URL=()
+IMAGE_NAME=()
+CURRENT_VER=()
+LATEST_VER=()
+STATUS=()
+MAX_REPO=0
+MAX_IMAGE=0
+MAX_CURRENT=0
+MAX_LATEST=0
+
+resolve_image() {
+    local image="$1"
+    if [[ "$image" != */* ]]; then
+        echo "library/${image}"
+    else
+        echo "$image"
+    fi
+}
+
+check_release() {
+    local repo="$1" image="$2" current="$3"
+
+    local api_image
+    api_image=$(resolve_image "$image")
+
+    local tags
+    tags=$(curl -s --max-time 10 \
+        "https://registry.hub.docker.com/v2/repositories/${api_image}/tags?page_size=100" |
+        jq -r '.results[].name' 2>/dev/null)
+
+    if [[ -z "$tags" ]]; then
+        echo "ERROR"
+        return 1
+    fi
+
+    local latest
+    if [[ "$current" =~ -ce\.[0-9]+$ ]]; then
+        latest=$(echo "$tags" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+-ce\.[0-9]+$' | sort -V | tail -n1)
+    elif [[ "$current" =~ ^v[0-9] ]]; then
+        latest=$(echo "$tags" | grep -E '^v[0-9]+(\.[0-9]+)*$' | sort -V | tail -n1)
+    else
+        latest=$(echo "$tags" | grep -E '^[0-9]+(\.[0-9]+)*$' | sort -V | tail -n1)
+    fi
+
+    if [[ -z "$latest" ]]; then
+        echo "ERROR"
+        return 1
+    fi
+
+    echo "$latest"
+    return 0
+}
+
+while IFS= read -r line; do
+    [[ "$line" =~ ^#.* ]] && continue
+    [[ -z "$line" ]] && continue
+
+    repo_with_rest="${line#*[}"
+    repo="${repo_with_rest%%]*}"
+    rest="${repo_with_rest#*]:}"
+    image="${rest%:*}"
+    version="${rest##*:}"
+
+    latest=$(check_release "$repo" "$image" "$version")
+    if [[ "$latest" == "ERROR" ]]; then
+        status="ERROR"
+    elif [[ "$version" == "$latest" ]]; then
+        status="OK"
+    else
+        status="Update Available"
+    fi
+
+    REPO_URL+=("$repo")
+    IMAGE_NAME+=("$image")
+    CURRENT_VER+=("$version")
+    LATEST_VER+=("$latest")
+    STATUS+=("$status")
+
+    (( ${#repo} > MAX_REPO )) && MAX_REPO=${#repo}
+    (( ${#image} > MAX_IMAGE )) && MAX_IMAGE=${#image}
+    (( ${#version} > MAX_CURRENT )) && MAX_CURRENT=${#version}
+    (( ${#latest} > MAX_LATEST )) && MAX_LATEST=${#latest}
+done < "$RELEASES_FILE"
+
+printf "%-${MAX_REPO}s  %-${MAX_IMAGE}s  %-${MAX_CURRENT}s  %-${MAX_LATEST}s  %s\n" \
+    "Repo URL" "Image" "Current" "Latest" "Status"
+printf "%-${MAX_REPO}s  %-${MAX_IMAGE}s  %-${MAX_CURRENT}s  %-${MAX_LATEST}s  %s\n" \
+    "$(printf '%*s' "$MAX_REPO" '' | tr ' ' '-')" \
+    "$(printf '%*s' "$MAX_IMAGE" '' | tr ' ' '-')" \
+    "$(printf '%*s' "$MAX_CURRENT" '' | tr ' ' '-')" \
+    "$(printf '%*s' "$MAX_LATEST" '' | tr ' ' '-')" \
+    "----------"
+
+for i in "${!REPO_URL[@]}"; do
+    printf "%-${MAX_REPO}s  %-${MAX_IMAGE}s  %-${MAX_CURRENT}s  %-${MAX_LATEST}s  %s\n" \
+        "${REPO_URL[$i]}" "${IMAGE_NAME[$i]}" "${CURRENT_VER[$i]}" "${LATEST_VER[$i]}" "${STATUS[$i]}"
+done
