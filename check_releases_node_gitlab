@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+
+RELEASES_FILE="$HOME/Nextcloud/releases_node_gitlab"
+
+command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required but not installed." >&2; exit 1; }
+
+echo "GitHub credentials (leave empty to skip, only public repos will work):"
+read -r -p "  Username: " GITHUB_USER
+read -r -s -p "  Token   : " GITHUB_TOKEN
+echo ""
+echo ""
+
+if [[ -n "$GITHUB_TOKEN" ]]; then
+    CURL_AUTH=(-u "${GITHUB_USER}:${GITHUB_TOKEN}")
+else
+    CURL_AUTH=()
+fi
+
+to_raw_url() {
+    local url="$1"
+    if [[ "$url" == https://github.com/* ]]; then
+        url="${url/https:\/\/github.com/https:\/\/raw.githubusercontent.com}"
+        url="${url/\/blob\//\/}"
+        echo "$url"
+    else
+        echo "$url"
+    fi
+}
+
+extract_base_version() {
+    local ver="$1"
+    ver="${ver#^}"
+    ver="${ver#~}"
+    ver="${ver#>=}"
+    ver="${ver#<=}"
+    ver="${ver#>}"
+    ver="${ver#<}"
+    ver="${ver#=}"
+    ver="${ver#v}"
+    echo "$ver"
+}
+
+is_skippable() {
+    local ver="$1"
+    [[ -z "$ver" ]] && return 0
+    [[ "$ver" == "*" ]] && return 0
+    [[ "$ver" == "latest" ]] && return 0
+    [[ "$ver" == workspace:* ]] && return 0
+    [[ "$ver" == file:* ]] && return 0
+    [[ "$ver" == github:* ]] && return 0
+    [[ "$ver" == npm:* ]] && return 0
+    [[ "$ver" == git:* ]] && return 0
+    [[ "$ver" == link:* ]] && return 0
+    return 1
+}
+
+check_package() {
+    local pkg="$1"
+
+    local pkg_encoded="${pkg////%2F}"
+
+    local latest
+    latest=$(curl -s --max-time 10 \
+        "https://registry.npmjs.org/${pkg_encoded}/latest" |
+        jq -r '.version' 2>/dev/null)
+
+    if [[ -z "$latest" || "$latest" == "null" ]]; then
+        echo "ERROR"
+        return 1
+    fi
+
+    echo "$latest"
+    return 0
+}
+
+print_table() {
+    local -n _pkg=$1 _cur=$2 _lat=$3 _sta=$4
+    local max_pkg=$5 max_cur=$6 max_lat=$7
+
+    printf "  %-${max_pkg}s  %-${max_cur}s  %-${max_lat}s  %s\n" \
+        "Library" "Current" "Latest" "Status"
+    printf "  %-${max_pkg}s  %-${max_cur}s  %-${max_lat}s  %s\n" \
+        "$(printf '%*s' "$max_pkg" '' | tr ' ' '-')" \
+        "$(printf '%*s' "$max_cur" '' | tr ' ' '-')" \
+        "$(printf '%*s' "$max_lat" '' | tr ' ' '-')" \
+        "----------"
+
+    local i
+    for i in "${!_pkg[@]}"; do
+        printf "  %-${max_pkg}s  %-${max_cur}s  %-${max_lat}s  %s\n" \
+            "${_pkg[$i]}" "${_cur[$i]}" "${_lat[$i]}" "${_sta[$i]}"
+    done
+}
+
+while IFS= read -r line; do
+    [[ "$line" =~ ^#.* ]] && continue
+    [[ -z "$line" ]] && continue
+
+    app="${line%%[*}"
+    url_with_rest="${line#*[}"
+    url="${url_with_rest%%]*}"
+
+    echo "=== ${app} ===" >&2
+    echo "Fetching package.json..." >&2
+
+    tmpfile="/tmp/${app}-package.json"
+    raw_url=$(to_raw_url "$url")
+    curl -s --max-time 10 "${CURL_AUTH[@]}" -o "$tmpfile" "$raw_url"
+
+    if [[ ! -s "$tmpfile" ]]; then
+        echo "  ERROR: Could not fetch package.json" >&2
+        echo ""
+        echo "=== ${app} ==="
+        echo "Repo: ${url}"
+        echo ""
+        echo "  ERROR: Could not fetch package.json"
+        echo ""
+        continue
+    fi
+
+    deps=$(jq -r '(.dependencies // {}) + (.devDependencies // {}) | to_entries[] | "\(.key)=\(.value)"' "$tmpfile" 2>/dev/null)
+
+    if [[ -z "$deps" ]]; then
+        echo "  No dependencies found" >&2
+        rm -f "$tmpfile"
+        echo ""
+        echo "=== ${app} ==="
+        echo "Repo: ${url}"
+        echo ""
+        echo "  No dependencies found"
+        echo ""
+        continue
+    fi
+
+    echo ""
+    echo "=== ${app} ==="
+    echo "Repo: ${url}"
+    echo ""
+
+    PKG=()
+    CUR=()
+    LAT=()
+    STA=()
+    MAX_PKG=0
+    MAX_CUR=0
+    MAX_LAT=0
+
+    while IFS='=' read -r pkg ver; do
+        if is_skippable "$ver"; then
+            continue
+        fi
+
+        echo -n "  Checking ${pkg}... " >&2
+        latest=$(check_package "$pkg")
+        echo "${latest}" >&2
+
+        if [[ "$latest" == "ERROR" ]]; then
+            status="ERROR"
+        else
+            base=$(extract_base_version "$ver")
+            higher=$(printf '%s\n%s\n' "$base" "$latest" | sort -V | tail -n1)
+            if [[ "$higher" == "$latest" && "$base" != "$latest" ]]; then
+                status="Update Available"
+            else
+                status="OK"
+            fi
+        fi
+
+        PKG+=("$pkg")
+        CUR+=("$ver")
+        LAT+=("$latest")
+        STA+=("$status")
+
+        (( ${#pkg} > MAX_PKG )) && MAX_PKG=${#pkg}
+        (( ${#ver} > MAX_CUR )) && MAX_CUR=${#ver}
+        (( ${#latest} > MAX_LAT )) && MAX_LAT=${#latest}
+    done <<< "$deps"
+
+    print_table PKG CUR LAT STA "$MAX_PKG" "$MAX_CUR" "$MAX_LAT"
+
+    echo ""
+    rm -f "$tmpfile"
+
+done < "$RELEASES_FILE"
