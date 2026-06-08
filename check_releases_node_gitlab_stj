@@ -1,24 +1,38 @@
 #!/usr/bin/env bash
 
-RELEASES_FILE="$HOME/Nextcloud/releases_node_gitlab"
+RELEASES_FILE="$HOME/Nextcloud/releases_node_gitlab_stj"
 
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required but not installed." >&2; exit 1; }
 
-echo "GitHub credentials (leave empty to skip, only public repos will work):"
-read -r -p "  Username: " GITHUB_USER
-read -r -s -p "  Token   : " GITHUB_TOKEN
+echo "GitLab credentials (leave empty to skip, only public repos will work):"
+read -r -p "  Username: " GITLAB_USER
+read -r -s -p "  Token   : " GITLAB_TOKEN
 echo ""
 echo ""
 
-if [[ -n "$GITHUB_TOKEN" ]]; then
-    CURL_AUTH=(-u "${GITHUB_USER}:${GITHUB_TOKEN}")
+if [[ -n "$GITLAB_TOKEN" ]]; then
+    CURL_AUTH=(-H "PRIVATE-TOKEN: ${GITLAB_TOKEN}")
 else
     CURL_AUTH=()
 fi
 
 to_raw_url() {
     local url="$1"
-    if [[ "$url" == https://github.com/* ]]; then
+    url="${url%%\?*}"
+
+    if [[ "$url" == */-/blob/* ]]; then
+        local prefix="${url%%\/-\/blob\/*}"
+        local no_proto="${prefix#*://}"
+        local host="${no_proto%%/*}"
+        host="${prefix%%${no_proto}}${host}"
+        local project_path="${no_proto#*/}"
+        local suffix="${url#*\/-\/blob\/}"
+        local branch="${suffix%%/*}"
+        local file_path="${suffix#*/}"
+        local encoded_project="${project_path//\//%2F}"
+        local encoded_file="${file_path//\//%2F}"
+        echo "${host}/api/v4/projects/${encoded_project}/repository/files/${encoded_file}/raw?ref=${branch}"
+    elif [[ "$url" == https://github.com/* ]]; then
         url="${url/https:\/\/github.com/https:\/\/raw.githubusercontent.com}"
         url="${url/\/blob\//\/}"
         echo "$url"
@@ -105,7 +119,7 @@ while IFS= read -r line; do
 
     tmpfile="/tmp/${app}-package.json"
     raw_url=$(to_raw_url "$url")
-    curl -s --max-time 10 "${CURL_AUTH[@]}" -o "$tmpfile" "$raw_url"
+    curl -sL --max-time 10 "${CURL_AUTH[@]}" -o "$tmpfile" "$raw_url"
 
     if [[ ! -s "$tmpfile" ]]; then
         echo "  ERROR: Could not fetch package.json" >&2
@@ -114,6 +128,17 @@ while IFS= read -r line; do
         echo "Repo: ${url}"
         echo ""
         echo "  ERROR: Could not fetch package.json"
+        echo ""
+        continue
+    fi
+
+    if ! jq empty "$tmpfile" 2>/dev/null; then
+        echo "  ERROR: Invalid JSON (repo may be private or auth failed)" >&2
+        echo ""
+        echo "=== ${app} ==="
+        echo "Repo: ${url}"
+        echo ""
+        echo "  ERROR: Invalid JSON (repo may be private or auth failed)"
         echo ""
         continue
     fi
