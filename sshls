@@ -24,17 +24,180 @@ figlet sshls
 
 # Ayuda
 function imprimir_ayuda() {
-	echo -e "\e[1mPodés agregar una nueva conexión en ${HOME}/.sshls\e[0m"
-	echo -e "\e[1mNo te olvides de guardar la contraseña en bitwarden\e[0m"
-	echo -e "\e[1mTambién podés evitar el prompt de contraseña generando una clave\e[0m"
-	echo -e "\e[1my guardando la conexión con:\e[0m"
-	echo -e "\e[1m	$ ssh-keygen\e[0m"
-	echo -e "\e[1m	$ ssh-copy-id -p22 user@server\e[0m"
+	echo -e "\e[1msshls\e[0m: lista tus conexiones ssh guardadas en ${HOME}/.sshls, te deja"
+	echo -e "filtrarlas rápido con fzf y conectarte con un solo enter."
+	echo -e "También sirve para chequear y configurar el acceso automático (sin"
+	echo -e "contraseña) de esas conexiones."
+	echo
+	echo -e "No te olvides de guardar la contraseña en bitwarden cuando agregues una conexión."
+	echo
+	echo -e "\e[1mUso:\e[0m sshls [opción]"
+	echo
+	echo -e "\e[1m  (sin opciones)\e[0m  Lista las conexiones y te conecta por ssh a la elegida."
+	echo -e "\e[1m  -t, --test\e[0m      Elegís una conexión de la lista y, en vez de conectar,"
+	echo -e "                  chequea si tiene acceso automático (sin contraseña)."
+	echo -e "                  Si no lo tiene, genera una clave ssh (si hace falta)"
+	echo -e "                  y corre ssh-copy-id para configurarlo."
+	echo -e "\e[1m  --test-all\e[0m      Recorre TODAS las conexiones (sin elegir ninguna) y"
+	echo -e "                  muestra con ✔/✘ cuáles tienen el acceso automático"
+	echo -e "                  configurado, sin modificar nada. Usá -t después para"
+	echo -e "                  arreglar las que falten."
+	echo -e "\e[1m  -s, --save\e[0m      Agrega una conexión nueva: pregunta host, puerto y"
+	echo -e "                  usuario, la guarda en ${HOME}/.sshls, la testea y"
+	echo -e "                  te pregunta si querés configurar el acceso automático."
+	echo -e "\e[1m  -h, --help\e[0m      Muestra esta ayuda."
 	echo
 }
 
-if [[ ${1} == "-h" ]] || [[ ${1} = "--help" ]]; then
-	imprimir_ayuda
+# Verifica si hay acceso sin contraseña probando un comando remoto en modo no interactivo
+# -n redirige el stdin de ssh a /dev/null: sin esto, ssh se come las líneas
+# que un `while read` esté leyendo del mismo stdin (p.ej. en testear_todas)
+function verificar_acceso_automatico() {
+	local conexion=$1
+	local puerto=$2
+
+	ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new \
+		-p "${puerto}" "${conexion}" "echo OK" &>/dev/null
+}
+
+# Genera una clave rsa si el usuario todavía no tiene ninguna
+function asegurar_clave_ssh() {
+	if ! compgen -G "${HOME}/.ssh/id_*.pub" >/dev/null; then
+		echo -e "\e[33mNo se encontró ninguna clave SSH. Generando una nueva...\e[0m"
+		ssh-keygen -t rsa
+	fi
+}
+
+# Genera clave si hace falta, corre ssh-copy-id y verifica el resultado
+function configurar_acceso_automatico() {
+	local conexion=$1
+	local puerto=$2
+
+	asegurar_clave_ssh
+
+	echo -e "\e[1mCopiando la clave pública con ssh-copy-id (puede pedir la contraseña)...\e[0m"
+	ssh-copy-id -p "${puerto}" "${conexion}"
+
+	if verificar_acceso_automatico "${conexion}" "${puerto}"; then
+		echo -e "\e[32m✔ Acceso automático configurado correctamente.\e[0m"
+	else
+		echo -e "\e[31m✘ No se pudo verificar el acceso automático luego de ssh-copy-id.\e[0m"
+	fi
+}
+
+# Testea el acceso rápido de una conexión y lo configura si no está guardado
+function testear_conexion() {
+	local conexion=$1
+	local puerto=$2
+
+	echo -e "\e[1mProbando acceso automático a ${conexion} (puerto ${puerto})...\e[0m"
+	if verificar_acceso_automatico "${conexion}" "${puerto}"; then
+		echo -e "\e[32m✔ El acceso automático ya está configurado.\e[0m"
+		return 0
+	fi
+
+	echo -e "\e[33m✘ No hay acceso automático guardado, pide contraseña.\e[0m"
+	configurar_acceso_automatico "${conexion}" "${puerto}"
+}
+
+# Agrega una conexión nueva a ${HOME}/.sshls, la testea y ofrece configurar el acceso automático
+function agregar_conexion() {
+	echo -e "\e[1mAgregar nueva conexión\e[0m"
+	local HOST PUERTO USUARIO DESCRIPCION LINEA
+
+	read -rp "Host (IP o dominio): " HOST
+	read -rp "Usuario: " USUARIO
+	read -rp "Puerto [22]: " PUERTO
+	PUERTO=${PUERTO:-22}
+	read -rp "Descripción (opcional): " DESCRIPCION
+
+	if [[ -z ${HOST} || -z ${USUARIO} ]]; then
+		echo -e "\e[31mHost y usuario son obligatorios. Cancelado.\e[0m"
+		return 1
+	fi
+
+	LINEA="${USUARIO}@${HOST}:${PUERTO}"
+	if [[ -n ${DESCRIPCION} ]]; then
+		LINEA="$(printf '%s\t"%s"' "${LINEA}" "${DESCRIPCION}")"
+	fi
+
+	echo "${LINEA}" >>"${HOME}/.sshls"
+	echo -e "\e[32mConexión agregada a ${HOME}/.sshls\e[0m"
+	echo -e "\e[1mNo te olvides de guardar la contraseña en bitwarden.\e[0m"
+
+	echo -e "\e[1mProbando acceso automático a ${USUARIO}@${HOST} (puerto ${PUERTO})...\e[0m"
+	if verificar_acceso_automatico "${USUARIO}@${HOST}" "${PUERTO}"; then
+		echo -e "\e[32m✔ El acceso automático ya está configurado.\e[0m"
+		return 0
+	fi
+
+	echo -e "\e[33m✘ No hay acceso automático guardado, pide contraseña.\e[0m"
+	read -rp "¿Querés configurar el acceso automático ahora (ssh-copy-id)? [s/N]: " RESPUESTA
+	if [[ ${RESPUESTA} =~ ^[sSyY]$ ]]; then
+		configurar_acceso_automatico "${USUARIO}@${HOST}" "${PUERTO}"
+	else
+		echo -e "\e[1mOk, después podés correr 'sshls -t' para configurarlo.\e[0m"
+	fi
+}
+
+# Recorre todas las conexiones y reporta cuáles tienen el acceso automático configurado
+function testear_todas() {
+	local total=0
+	local faltantes=0
+	local linea sel desc conexion puerto
+
+	while IFS= read -r linea; do
+		[[ -z ${linea} ]] && continue
+		sel=$(echo "${linea}" | awk '{print $1}')
+		desc=$(echo "${linea}" | grep -oP '"\K[^"]*')
+		conexion=${sel%%:*}
+		puerto=${sel##*:}
+
+		total=$((total + 1))
+		if verificar_acceso_automatico "${conexion}" "${puerto}"; then
+			echo -e "\e[32m✔\e[0m ${sel} ${desc:+(${desc})}"
+		else
+			faltantes=$((faltantes + 1))
+			echo -e "\e[31m✘\e[0m ${sel} ${desc:+(${desc})} \e[33m<- falta configurar\e[0m"
+		fi
+	done < <(grep "^[^#*/;]" "${HOME}/.sshls")
+
+	echo
+	if [[ ${faltantes} -eq 0 ]]; then
+		echo -e "\e[32mTodas las conexiones (${total}) tienen acceso automático configurado.\e[0m"
+	else
+		echo -e "\e[33m${faltantes} de ${total} conexiones no tienen acceso automático. Usá 'sshls -t' para configurarlas.\e[0m"
+	fi
+}
+
+MODO_TEST=0
+MODO_TEST_ALL=0
+MODO_SAVE=0
+for ARG in "$@"; do
+	case ${ARG} in
+	-h | --help)
+		imprimir_ayuda
+		exit 0
+		;;
+	--test-all)
+		MODO_TEST_ALL=1
+		;;
+	-s | --save)
+		MODO_SAVE=1
+		;;
+	-t | --test)
+		MODO_TEST=1
+		;;
+	esac
+done
+
+if [[ ${MODO_TEST_ALL} -eq 1 ]]; then
+	testear_todas
+	exit 0
+fi
+
+if [[ ${MODO_SAVE} -eq 1 ]]; then
+	agregar_conexion
 	exit 0
 fi
 
@@ -46,6 +209,10 @@ else
 	CONEXION=$(echo $SELECCION | cut -d: -f1)
 	PUERTO=$(echo $SELECCION | cut -d: -f2)
 
-	ssh -p $PUERTO $CONEXION
+	if [[ ${MODO_TEST} -eq 1 ]]; then
+		testear_conexion "${CONEXION}" "${PUERTO}"
+	else
+		ssh -p $PUERTO $CONEXION
+	fi
 fi
 exit 0
