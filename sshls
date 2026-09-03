@@ -60,11 +60,16 @@ function verificar_acceso_automatico() {
 		-p "${puerto}" "${conexion}" "echo OK" &>/dev/null
 }
 
-# Genera una clave rsa si el usuario todavía no tiene ninguna
+# Clave ssh que sshls siempre usa para el acceso automático. Se fija la ruta
+# para no depender de "cualquier clave que haya" y no terminar generando ni
+# copiando claves distintas de una corrida a otra.
+CLAVE_SSH="${HOME}/.ssh/id_rsa"
+
+# Genera la clave de sshls solo si todavía no existe
 function asegurar_clave_ssh() {
-	if ! compgen -G "${HOME}/.ssh/id_*.pub" >/dev/null; then
-		echo -e "\e[33mNo se encontró ninguna clave SSH. Generando una nueva...\e[0m"
-		ssh-keygen -t rsa
+	if [[ ! -f "${CLAVE_SSH}.pub" ]]; then
+		echo -e "\e[33mNo se encontró ${CLAVE_SSH}.pub. Generando una nueva...\e[0m"
+		ssh-keygen -t rsa -f "${CLAVE_SSH}"
 	fi
 }
 
@@ -75,8 +80,8 @@ function configurar_acceso_automatico() {
 
 	asegurar_clave_ssh
 
-	echo -e "\e[1mCopiando la clave pública con ssh-copy-id (puede pedir la contraseña)...\e[0m"
-	ssh-copy-id -p "${puerto}" "${conexion}"
+	echo -e "\e[1mCopiando ${CLAVE_SSH}.pub con ssh-copy-id (puede pedir la contraseña)...\e[0m"
+	ssh-copy-id -i "${CLAVE_SSH}.pub" -p "${puerto}" "${conexion}"
 
 	if verificar_acceso_automatico "${conexion}" "${puerto}"; then
 		echo -e "\e[32m✔ Acceso automático configurado correctamente.\e[0m"
