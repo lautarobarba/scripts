@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+{
+  printf '%s\n' 'NAME|IMAGE|CREATED|STATUS|PORTS'
+
+  docker container ls -a --format '{{.Names}}|{{.Image}}|{{.RunningFor}}|{{.Status}}|{{.Ports}}' |
+    awk -F'|' '
+    BEGIN {
+      OFS = "|"
+    }
+
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+
+    function normalize_port(port, parts, host, container_port) {
+      port = trim(port)
+
+      if (index(port, "->") > 0) {
+        split(port, parts, "->")
+        host = parts[1]
+        container_port = parts[2]
+        sub(/^.*:/, "", host)
+        sub(/\/.*/, "", container_port)
+        return host "->" container_port
+      }
+
+      sub(/\/.*/, "", port)
+      return "X->" port
+    }
+
+    {
+      if ($5 == "") {
+        ports = "X"
+      } else {
+        count = split($5, entries, ",")
+        ports = ""
+        for (entry_index = 1; entry_index <= count; entry_index++) {
+          port = normalize_port(entries[entry_index])
+          if (!seen[NR, port]++) {
+            if (ports != "") {
+              ports = ports ", "
+            }
+            ports = ports port
+          }
+        }
+      }
+
+      print $1, $2, $3, $4, ports
+    }
+    '
+} | column -t -s '|'
