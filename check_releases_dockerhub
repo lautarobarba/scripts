@@ -24,13 +24,25 @@ MAX_IMAGE=${#HEADER_IMAGE}
 MAX_CURRENT=${#HEADER_CURRENT}
 MAX_LATEST=${#HEADER_LATEST}
 
+# Separa el registry del repositorio. Si el primer componente tiene un
+# punto, dos puntos o es localhost, es un registry (ghcr.io, quay.io...).
+#   nextcloud                 -> docker.io library/nextcloud
+#   gitlab/gitlab-ce          -> docker.io gitlab/gitlab-ce
+#   ghcr.io/goauthentik/server -> ghcr.io  goauthentik/server
 resolve_image() {
-    local image="$1"
-    if [[ "$image" != */* ]]; then
-        echo "library/${image}"
-    else
-        echo "$image"
+    local image="$1" registry="docker.io" first="${1%%/*}"
+
+    if [[ "$image" == */* && ( "$first" == *.* || "$first" == *:* || "$first" == localhost ) ]]; then
+        registry="$first"
+        image="${image#*/}"
     fi
+
+    if [[ "$registry" == "docker.io" || "$registry" == "index.docker.io" ]]; then
+        registry="docker.io"
+        [[ "$image" != */* ]] && image="library/${image}"
+    fi
+
+    echo "$registry $image"
 }
 
 # Construye la expresion regular que describe la version actual:
@@ -64,22 +76,61 @@ version_pattern() {
     printf '^%s[0-9]+(\\.[0-9]+){%d}%s$' "$prefix" "$depth" "$suffix_re"
 }
 
-# El registry devuelve todos los tags en una sola llamada.
-# Si falla se usa la API de Docker Hub (solo la primera pagina).
+# Pide un token anonimo usando el desafio WWW-Authenticate del registry
+# (sirve para ghcr.io, quay.io, lscr.io, etc.).
+registry_token() {
+    local host="$1" api_image="$2" challenge realm service
+
+    challenge=$(curl -s --max-time 15 -o /dev/null -D - \
+        "https://${host}/v2/${api_image}/tags/list" |
+        grep -i '^www-authenticate:' | tr -d '\r')
+    [[ -z "$challenge" ]] && return 0
+
+    realm=$(sed -nE 's/.*realm="([^"]*)".*/\1/p' <<< "$challenge")
+    service=$(sed -nE 's/.*service="([^"]*)".*/\1/p' <<< "$challenge")
+    [[ -z "$realm" ]] && return 0
+
+    curl -s --max-time 15 -G "$realm" \
+        ${service:+--data-urlencode "service=${service}"} \
+        --data-urlencode "scope=repository:${api_image}:pull" |
+        jq -r '.token // .access_token // empty' 2>/dev/null
+}
+
+# Recorre todas las paginas de /v2/<image>/tags/list siguiendo el header Link.
+registry_tags() {
+    local host="$1" api_image="$2" token="$3"
+    local url="https://${host}/v2/${api_image}/tags/list?n=1000"
+    local headers body next pages=0
+
+    headers=$(mktemp)
+    while [[ -n "$url" ]] && (( pages++ < 50 )); do
+        body=$(curl -s --max-time 30 -D "$headers" \
+            ${token:+-H "Authorization: Bearer ${token}"} "$url")
+        jq -r '.tags[]?' <<< "$body" 2>/dev/null
+
+        next=$(grep -i '^link:' "$headers" | sed -nE 's/.*<([^>]*)>.*/\1/p' | tr -d '\r')
+        if [[ -z "$next" ]]; then
+            url=""
+        elif [[ "$next" == /* ]]; then
+            url="https://${host}${next}"
+        else
+            url="$next"
+        fi
+    done
+    rm -f "$headers"
+}
+
+# El registry devuelve todos los tags (paginados via Link).
+# Para Docker Hub, si falla se usa su API (solo la primera pagina).
 fetch_tags() {
-    local api_image="$1" token="" tags=""
+    local registry="$1" api_image="$2" host="$1" token="" tags=""
 
-    token=$(curl -s --max-time 15 \
-        "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${api_image}:pull" |
-        jq -r '.token // empty' 2>/dev/null)
+    [[ "$registry" == "docker.io" ]] && host="registry-1.docker.io"
 
-    if [[ -n "$token" ]]; then
-        tags=$(curl -s --max-time 30 -H "Authorization: Bearer ${token}" \
-            "https://registry-1.docker.io/v2/${api_image}/tags/list" |
-            jq -r '.tags[]?' 2>/dev/null)
-    fi
+    token=$(registry_token "$host" "$api_image")
+    tags=$(registry_tags "$host" "$api_image" "$token")
 
-    if [[ -z "$tags" ]]; then
+    if [[ -z "$tags" && "$registry" == "docker.io" ]]; then
         tags=$(curl -s --max-time 15 \
             "https://registry.hub.docker.com/v2/repositories/${api_image}/tags?page_size=100" |
             jq -r '.results[]?.name' 2>/dev/null)
@@ -97,9 +148,9 @@ check_release() {
         return 1
     }
 
-    local api_image tags
-    api_image=$(resolve_image "$image")
-    tags=$(fetch_tags "$api_image")
+    local registry api_image tags
+    read -r registry api_image <<< "$(resolve_image "$image")"
+    tags=$(fetch_tags "$registry" "$api_image")
 
     if [[ -z "$tags" ]]; then
         echo "ERROR"
